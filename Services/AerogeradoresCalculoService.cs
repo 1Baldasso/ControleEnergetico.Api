@@ -153,10 +153,10 @@ public class AerogeradoresCalculoService(EnergiaContext context) : IAerogeradore
                     var potenciaMedia = potencia * weibull;
                     potenciaMediaTotal += potenciaMedia;
                 }
-                var energiaMensal = (potenciaMediaTotal) * 24 * 30;
+                var energiaMensal = (potenciaMediaTotal / 1000) * 24 * 30;
                 if (energiaMensal >= energiaNecessaria)
                 {
-                    dic.Add(painel, (painel.CustoModelo * k, k, (potenciaMediaTotal) * 24 * 30));
+                    dic.Add(painel, (painel.CustoModelo * k, k, energiaMensal));
                     break;
                 }
             }
