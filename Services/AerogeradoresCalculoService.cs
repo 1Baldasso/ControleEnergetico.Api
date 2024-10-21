@@ -12,6 +12,7 @@ public class AerogeradoresCalculoService(EnergiaContext context) : IAerogeradore
     public TabelaFinal Tabela => _tabela;
 
     public Aerogeradores Aerogerador => _aerogerador;
+    public int Quantidade => _quantidade;
 
     private decimal _custoInstalacao = 0m;
     public decimal CustoInstalacao => _custoInstalacao;
@@ -20,34 +21,20 @@ public class AerogeradoresCalculoService(EnergiaContext context) : IAerogeradore
     public TabelaVpl TabelaVpl => _tabelaVpl;
 
     private Aerogeradores? _aerogerador = null;
+    private int _quantidade = 1;
 
     public async Task<decimal> CalcularLcoe(Problema problema, CancellationToken cancellationToken = default)
     {
         var consumoMedioMensal = problema.Consumo;
         var incidencia = problema.ValoresAeroincidencia;
         var potenciaNecessaria = GetPotenciaNecessaria(consumoMedioMensal);
-        var aerogeradores = await context.Aerogeradores
-            .Include(x => x.Potenciais)
-            .OrderByDescending(x => x.Potencia)
-            .ToListAsync(cancellationToken);
-        aerogeradores.AddRange(problema.Aerogeradores);
-        var aerogerador = aerogeradores
-            .FirstOrDefault(x => x.Potencia - potenciaNecessaria <= 0);
+        var (aerogerador, valor, quantidade, energiaMensal) = await EncontrarMelhorModuloAsync(incidencia, consumoMedioMensal, problema.Aerogeradores, cancellationToken);
         _aerogerador = aerogerador;
-        decimal weibullTotal = 0;
-        decimal potenciaMediaTotal = 0;
-        for (int i = 0; i <= 20; i++)
-        {
-            var potencia = aerogerador.Potenciais.FirstOrDefault(x => x.Valor == i).Potencia;
-            var weibull = Weibull(incidencia.K, incidencia.C, i);
-            weibullTotal += weibull;
-            var potenciaMedia = potencia * weibull;
-            potenciaMediaTotal += potenciaMedia;
-        }
+        _quantidade = quantidade;
 
-        var implantacao = ((aerogerador.CustoModeloInterno ?? 0) * 100) / 70;
+        var implantacao = ((aerogerador.CustoModeloInterno ?? 0) * quantidade * 100) / 70;
         _custoInstalacao = implantacao;
-        var energiaPorMes = (potenciaMediaTotal / 1000) * 24 * 30;
+        var energiaPorMes = energiaMensal;
         var manutencao = implantacao * 0.02m;
         var manutencaoArr = new double[25];
         var energiaArr = new double[25];
@@ -141,5 +128,41 @@ public class AerogeradoresCalculoService(EnergiaContext context) : IAerogeradore
             >= 9290 and < 24850 => 100m,
             _ => throw new NotImplementedException()
         };
+    }
+
+    private async Task<(Aerogeradores painel, decimal valor, int numero, decimal energiaMensal)> EncontrarMelhorModuloAsync(ValoresAeroincidencia valoresAeroincidencia, decimal energiaNecessaria, IEnumerable<Aerogeradores> paineisExtras, CancellationToken cancellationToken)
+    {
+        var paineis = await context.Aerogeradores
+            .Include(x => x.Potenciais)
+            .OrderBy(x => x.Potencia)
+            .ToListAsync(cancellationToken);
+        paineis.AddRange(paineisExtras);
+        var dic = new Dictionary<Aerogeradores, (decimal, int, decimal)>();
+
+        foreach (var painel in paineis)
+        {
+            for (int k = 1; ; k++)
+            {
+                var weibullTotal = 0m;
+                var potenciaMediaTotal = 0m;
+                for (int i = 0; i <= 20; i++)
+                {
+                    var potencia = painel.Potenciais.FirstOrDefault(x => x.Valor == i).Potencia * k;
+                    var weibull = Weibull(valoresAeroincidencia.K, valoresAeroincidencia.C, i);
+                    weibullTotal += weibull;
+                    var potenciaMedia = potencia * weibull;
+                    potenciaMediaTotal += potenciaMedia;
+                }
+                var energiaMensal = (potenciaMediaTotal) * 24 * 30;
+                if (energiaMensal >= energiaNecessaria)
+                {
+                    dic.Add(painel, (painel.CustoModelo * k, k, (potenciaMediaTotal) * 24 * 30));
+                    break;
+                }
+            }
+        }
+
+        var result = dic.MinBy(x => x.Value.Item1);
+        return (result.Key, result.Value.Item1, result.Value.Item2, result.Value.Item3);
     }
 }

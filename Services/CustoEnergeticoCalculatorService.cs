@@ -22,7 +22,7 @@ public class CustoEnergeticoCalculatorService(IAerogeradoresCalculoService aeroS
                 //TabelaVpl = aeroService.TabelaVpl,
                 Lcoe = aeroLcoe,
                 CustoImplantacao = aeroService.CustoInstalacao,
-                DadosExtra = new { aeroService.Aerogerador },
+                DadosExtra = new { aeroService.Aerogerador, aeroService.Quantidade },
             },
             Fotovoltaico = new RespostaConjunto
             {
